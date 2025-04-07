@@ -1,0 +1,7 @@
+dlib==19.24.4
+numpy==1.26.4
+opencv-python==4.10.0.82
+setuptools==70.0.0
+gaze-tracking==2.0
+opencv-python-headless==4.9.0.80
+scikit-learn==1.4.0
