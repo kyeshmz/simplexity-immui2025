@@ -2,9 +2,9 @@ import torch
 import numpy as np
 from collections import deque
 import time
-from .EngagementClassifierV1 import EngagementClassifierV1
+from EngagementClassifierV1 import EngagementClassifierV1
 import mediapipe as mp
-from ..Processing.FaceFeatureExtractor import FaceFeatureExtractor, FaceFeatures
+from FaceFeatureExtractor import FaceFeatureExtractor, FaceFeatures
 import cv2
 
 # Initialize MediaPipe
@@ -21,7 +21,7 @@ class EngagementPredictor:
     def __init__(self, model_path: str, window_size: int = 30, threshold: float = 0.5):
         """
         Initialize the engagement predictor with a pre-trained model.
-        
+
         Args:
             model_path: Path to the saved model weights
             window_size: Number of frames to consider for temporal smoothing
@@ -31,15 +31,15 @@ class EngagementPredictor:
         self.model = EngagementClassifierV1().to(self.device)
         self.model.load_state_dict(torch.load(model_path, map_location=self.device))
         self.model.eval()
-        
+
         self.window_size = window_size
         self.threshold = threshold
         self.prediction_history = deque(maxlen=window_size)
         self.feature_scaler = None  # Add your fitted StandardScaler here if used during training
-        
+
         # Labels for engagement levels
         self.engagement_labels = ['Disengaged', 'Partially Engaged', 'Fully Engaged']
-        
+
     def _preprocess_features(self, features: FaceFeatures) -> torch.Tensor:
         """Convert FaceFeatures to model input tensor."""
         feature_vector = np.array([
@@ -56,12 +56,12 @@ class EngagementPredictor:
             features.time_since_head_movement,
             features.time_since_gaze_shift
         ]).reshape(1, -1)
-        
+
         if self.feature_scaler is not None:
             feature_vector = self.feature_scaler.transform(feature_vector)
-            
+
         return torch.FloatTensor(feature_vector).to(self.device)
-    
+
     def predict(self, features: FaceFeatures) -> dict:
         """
         Predict engagement level from face features.
@@ -73,15 +73,15 @@ class EngagementPredictor:
             probabilities = torch.softmax(logits, dim=1)
             prediction = torch.argmax(probabilities, dim=1).item()
             confidence = probabilities[0][prediction].item()
-            
+
             self.prediction_history.append(prediction)
-            
+
             if len(self.prediction_history) >= self.window_size:
                 counts = np.bincount(list(self.prediction_history))
                 smoothed_prediction = np.argmax(counts)
             else:
                 smoothed_prediction = prediction
-                
+
             return {
                 'raw_prediction': self.engagement_labels[prediction],
                 'smoothed_prediction': self.engagement_labels[smoothed_prediction],
@@ -94,13 +94,13 @@ def main():
     cap = cv2.VideoCapture(0)
     feature_extractor = FaceFeatureExtractor()
     predictor = EngagementPredictor(
-        model_path='backend/models/best_model_v3.pth',
+        model_path='best_model_v3.pth',
         window_size=30,
         threshold=0.5
     )
 
     print("\n*\n*\n*\nStarting real-time engagement detection. Press 'q' to quit.\n*\n*\n*\n")
-    
+
     while cap.isOpened():
         ret, frame = cap.read()
         if not ret:
