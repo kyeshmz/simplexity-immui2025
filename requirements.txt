@@ -1,0 +1,6 @@
+PySide6
+python-osc
+pyqtgraph
+numpy
+opencv-python-headless
+ultralytics 
