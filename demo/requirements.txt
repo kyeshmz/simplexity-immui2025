@@ -1,0 +1,10 @@
+PySide6
+python-osc
+pyqtgraph
+opencv-python
+mediapipe
+numpy
+pandas
+torch
+torchvision
+dlib

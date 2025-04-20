@@ -26,7 +26,7 @@ ANNOTATION_WORDS = {
     "current":       {"text": "The flow of electric charge.", "image": "images/current.png"},
     "ground":        {"text": "A common reference point in an electrical circuit from which voltages are measured.", "image": "images/ground.png"}
 }
-SAMPLE_PARAGRAPH = "When configuring I/O pins to recieve current to ground, improper settings can create unexpected behavior. "
+SAMPLE_PARAGRAPH = "When configuring I/O pins to receive current to ground, improper settings can create unexpected behavior. "
 
 IMAGE_NOT_FOUND_PATH = "images/not_found.png"  # Optional: Image to show if specific word image missing
 DEFAULT_POPUP_IMAGE_TEXT = "Hover or trigger word..."  # Placeholder text if needed
