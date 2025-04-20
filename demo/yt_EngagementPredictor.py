@@ -6,6 +6,10 @@ from EngagementClassifierV1 import EngagementClassifierV1
 import mediapipe as mp
 from FaceFeatureExtractor import FaceFeatureExtractor, FaceFeatures
 import cv2
+from pythonosc.udp_client import SimpleUDPClient
+
+# Only initialize once (e.g., globally at the top of the script)
+osc_dashboard_client = SimpleUDPClient("127.0.0.1", 5006)
 
 # Initialize MediaPipe
 mp_face_mesh = mp.solutions.face_mesh
@@ -106,6 +110,7 @@ def main():
         fixation_avg = 0
         pupil_mean = 0
         blink_rate = 0
+        features = None
 
         if results.multi_face_landmarks:
             for face_landmarks in results.multi_face_landmarks:
@@ -130,7 +135,8 @@ def main():
                 ear_left = eye_aspect_ratio(face_landmarks.landmark, left_eye_idx)
                 ear_right = eye_aspect_ratio(face_landmarks.landmark, right_eye_idx)
                 ear_avg = (ear_left + ear_right) / 2
-                if ear_avg < 0.20:
+                is_blinking = ear_avg < 0.20
+                if is_blinking:
                     blink_timestamps.append(time.time())
 
                 now = time.time()
@@ -160,16 +166,21 @@ def main():
                 fixation_avg = np.mean(fixation_durations) * 1000 if fixation_durations else 0
                 pupil_mean = np.mean(pupil_sizes) if pupil_sizes else 0
                 pupil_std_ratio = np.std(pupil_sizes) / (BASELINE_PUPIL_SIZE + 1e-5)
-                distraction_score = sum([
-                    blink_rate > 0.6,
-                    fixation_avg < 80,
-                    #pupil_std_ratio > 0.4
-                ])
 
                 features = feature_extractor.extract_features(frame, face_landmarks)
                 engagement = predictor.predict(features)
 
-                if engagement['smoothed_prediction'] == 'Fully Engaged' and distraction_score <= 1:
+                distraction_score = sum([
+                    blink_rate > 0.6,
+                    fixation_avg < 80,
+                    not features.eye_contact_detected
+                ])
+
+                if features.yawn_detected:
+                    state = "Distracted"
+                elif engagement['smoothed_prediction'] == 'Fully Engaged' and distraction_score <= 1:
+                    state = "Focused"
+                elif pupil_std_ratio > 0.5:
                     state = "Focused"
                 else:
                     state = "Distracted"
@@ -187,14 +198,32 @@ def main():
         anonymized = cv2.cvtColor(thresh, cv2.COLOR_GRAY2BGR)
         final_output = cv2.addWeighted(anonymized, 1.0, overlay, 1.0, 0)
 
-        cv2.rectangle(final_output, (0, 0), (420, 230), (0, 0, 0), -1)
+        cv2.rectangle(final_output, (0, 0), (420, 400), (0, 0, 0), -1)
         cv2.putText(final_output, f"Blink Rate: {blink_rate:.2f}/s", (10, 40), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 255, 255), 2)
-        cv2.putText(final_output, f"Fixation: {fixation_avg:.0f}ms", (10, 75), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 255, 255), 2)
-        cv2.putText(final_output, f"Pupil: {pupil_mean:.1f}px", (10, 110), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 255, 255), 2)
-        state_color = (0, 255, 0) if state == "Focused" else (0, 0, 255)
-        cv2.putText(final_output, state, (10, 200), cv2.FONT_HERSHEY_SIMPLEX, 1.8, state_color, 4)
+        cv2.putText(final_output, f"Fixation Duration: {fixation_avg:.0f}ms", (10, 75), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 255, 255), 2)
+        cv2.putText(final_output, f"Pupil Diameter: {pupil_mean:.1f}px", (10, 110), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 255, 255), 2)
 
-        cv2.imshow("Simplexity_v2", final_output)
+        if features:
+            cv2.putText(final_output, f"Eye Contact Duration: {features.eye_contact_duration:.1f}s", (10, 145), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 255, 255), 2)
+            cv2.putText(final_output, f"Eye Contact: {'Yes' if features.eye_contact_detected else 'No'}", (10, 180), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 255, 255), 2)
+            cv2.putText(final_output, f"Blink: {'Yes' if is_blinking else 'No'}", (10, 215), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 255, 255), 2)
+            cv2.putText(final_output, f"Time Since Head Movement: {features.time_since_head_movement:.1f}s", (10, 250), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 255, 255), 2)
+            if features.yawn_detected:
+                text = "YAWNING DETECTED!"
+                font = cv2.FONT_HERSHEY_SIMPLEX
+                font_scale = 0.9
+                thickness = 2
+                color = (255, 0, 0)
+
+                text_size = cv2.getTextSize(text, font, font_scale, thickness)[0]
+                text_width = text_size[0]
+                text_x = (final_output.shape[1] - text_width) // 2
+                cv2.putText(final_output, text, (text_x, 290), font, font_scale, color, thickness)
+
+        state_color = (0, 255, 0) if state == "Focused" else (0, 0, 255)
+        cv2.putText(final_output, state, (10, 390), cv2.FONT_HERSHEY_SIMPLEX, 1.8, state_color, 4)
+
+        cv2.imshow("Simplexity_v3", final_output)
         if cv2.waitKey(1) & 0xFF == 27:
             break
 
