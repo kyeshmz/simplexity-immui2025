@@ -4,13 +4,14 @@ from PySide6.QtGui import QColor
 
 from student_chart_widget import StudentChartWidget
 
+
 class DashboardWindow(QMainWindow):
     # Define color mapping for BINARY concentration levels
     CONCENTRATION_COLORS = {
         0: QColor("orange"),  # Not concentrated
         1: QColor("lightgreen")  # Concentrated
     }
-    
+
     @staticmethod
     def get_concentration_color(binary_concentration):  # Input is now 0 or 1
         return DashboardWindow.CONCENTRATION_COLORS.get(int(binary_concentration), QColor("white"))  # Default white
@@ -47,7 +48,7 @@ class DashboardWindow(QMainWindow):
         if student_id not in self.student_widgets:
             print(f"Dashboard: Adding new student chart for {student_id}")
             student_widget = StudentChartWidget(student_id)
-            
+
             # Add a separator line
             separator = QFrame()
             separator.setFrameShape(QFrame.Shape.HLine)  # Horizontal line
@@ -55,7 +56,7 @@ class DashboardWindow(QMainWindow):
             separator.setFixedHeight(2)  # Make it thin
 
             self.students_layout.addWidget(student_widget)  # Add the chart widget
-            self.students_layout.addWidget(separator)      # Add the separator below it
+            self.students_layout.addWidget(separator)  # Add the separator below it
 
             self.student_widgets[student_id] = student_widget
             return student_widget
@@ -71,4 +72,4 @@ class DashboardWindow(QMainWindow):
     @Slot(str, str)
     def update_student_trigger(self, student_id, word):
         student_widget = self._get_or_create_student_widget(student_id)
-        student_widget.update_trigger_word(word) 
+        student_widget.update_trigger_word(word)

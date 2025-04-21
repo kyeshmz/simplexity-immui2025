@@ -26,7 +26,36 @@ ANNOTATION_WORDS = {
     "current":       {"text": "The flow of electric charge.", "image": "images/current.png"},
     "ground":        {"text": "A common reference point in an electrical circuit from which voltages are measured.", "image": "images/ground.png"}
 }
-SAMPLE_PARAGRAPH = "When configuring I/O pins to recieve current to ground, improper settings can create unexpected behavior. "
+
+PARAGRAPH_HOVER_CONTENT = {
+    1: {
+        1: {
+            "text": "A microcontroller pin set as “input” should be connected to a pull-down resistor (e.g. 10kΩ to ground) to stabilize voltage levels, ensuring clean signal detection. Misconfiguring this could create accidental short circuits.",
+            "image": "images/para1_focused.jpg"
+        },
+        2: {
+            "text": "Imagine a water pipe system. If a valve (input pin) is opened to let water flow into a drain (ground) but the pump (current source) isn’t turned on, water stagnates - like how a floating input pin picks up erratic signals.",
+            "image": "images/para1_distracted.jpg"
+        }
+    },
+    2: {
+        1: {
+            "text": "[Placeholder text explanation for Focused User]",
+            "image": "images/para2_focused.jpg"
+        },
+        2: {
+            "text": "[Placeholder text explanation Distracted User]",
+            "image": "images/para2_distracted.jpg"
+        }
+    }
+}
+
+
+
+
+SAMPLE_PARAGRAPH = """When configuring I/O pins to receive current to ground, improper settings can create unexpected behavior.
+
+Voltage drops can occur if components are misaligned, leading to potential circuit failure or incorrect readings."""
 
 IMAGE_NOT_FOUND_PATH = "images/not_found.png"  # Optional: Image to show if specific word image missing
 DEFAULT_POPUP_IMAGE_TEXT = "Hover or trigger word..."  # Placeholder text if needed
