@@ -67,7 +67,8 @@ if __name__ == "__main__":
     else:
         print(f"Using engagement model: {model_path}")
 
-    webcam_processor = WebcamProcessor(model_path=model_path)
+    # Pass the student ID to the webcam processor for OSC messaging
+    webcam_processor = WebcamProcessor(model_path=model_path, student_id=STUDENT_ID)
     webcam_processor.concentration_updated.connect(student_osc_handler.concentration_received)
 
     # --- Start Webcam Processor ---

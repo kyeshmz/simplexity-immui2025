@@ -8,16 +8,30 @@ from FaceFeatureExtractor import FaceFeatureExtractor, FaceFeatures
 import cv2
 from PySide6.QtCore import QObject, Signal
 from pythonosc.udp_client import SimpleUDPClient
-
-osc_dashboard_client = SimpleUDPClient("127.0.0.1", 5006)
+from config import DASHBOARD_STATUS_ADDRESS, DASHBOARD_IP, DASHBOARD_PORT
 
 class WebcamProcessor(QObject):
     frame_processed = Signal(np.ndarray, dict)
     concentration_updated = Signal(float)
 
-    def __init__(self, model_path="best_model_v3.pth"):
+    def __init__(self, model_path="best_model_v3.pth", student_id="Student"):
         super().__init__()
-
+        
+        # Store student ID for OSC messaging
+        self.student_id = student_id
+        print(f"WebcamProcessor initialized for student ID: {self.student_id}")
+        
+        # Initialize OSC client for direct dashboard communication
+        try:
+            self.dashboard_osc_client = SimpleUDPClient(DASHBOARD_IP, DASHBOARD_PORT)
+            print(f"OSC client created to send to dashboard at {DASHBOARD_IP}:{DASHBOARD_PORT}")
+            # Send initial test message to verify connection
+            self.dashboard_osc_client.send_message(DASHBOARD_STATUS_ADDRESS, [self.student_id, 0.5, "INIT"])
+            print(f"Sent initial test message to dashboard: {self.student_id}, 0.5, INIT")
+        except Exception as e:
+            print(f"ERROR creating OSC client: {e}")
+            self.dashboard_osc_client = None
+        
         self.mp_face_mesh = mp.solutions.face_mesh
         self.face_mesh = self.mp_face_mesh.FaceMesh(
             max_num_faces=2,
@@ -52,10 +66,17 @@ class WebcamProcessor(QObject):
         self.BASELINE_PUPIL_SIZE = 20.0
 
         self.prediction_history = deque(maxlen=30)
-        self.engagement_labels = ['Disengaged', 'Partially Engaged', 'Fully Engaged']
+        self.engagement_labels = ['Disengaged','Partially Engaged', 'Fully Engaged']
 
         self.running = False
         self.cap = None
+        
+        # Track state changes to send updates
+        self.last_distraction_time = 0
+        self.distraction_cooldown = 1.0  # seconds between status updates (reduced to be more responsive)
+        self.was_previously_distracted = False
+        self.last_concentration_value = None  # To track changes in concentration value
+        self.last_state = None  # To track changes in state description
 
     def _preprocess_features(self, features):
         feature_vector = np.array([
@@ -167,9 +188,20 @@ class WebcamProcessor(QObject):
         pupil_mean = 0
         blink_rate = 0
         features = None
+        concentration_value = 0.0
+        engagement_details = {}
 
         if not results.multi_face_landmarks:
-            self.concentration_updated.emit(0.0)
+            # No face detected - always disengaged
+            concentration_value = 0.0
+            state = "No Face"
+            
+            # Send status update via OSC
+            self._send_status_update(concentration_value, state)
+            
+            # Also emit the standard Qt signal
+            self.concentration_updated.emit(concentration_value)
+            
             frame_gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
             _, thresh = cv2.threshold(frame_gray, 50, 255, cv2.THRESH_BINARY_INV)
             anonymized = cv2.cvtColor(thresh, cv2.COLOR_GRAY2BGR)
@@ -236,26 +268,43 @@ class WebcamProcessor(QObject):
 
             features = self.feature_extractor.extract_features(frame, face_landmarks)
             engagement = self.predict_engagement(features)
-
+            engagement_details = engagement
+            
+            # Determine distraction factors
             distraction_score = sum([
                 blink_rate > 0.6,
                 fixation_avg < 80,
                 not features.eye_contact_detected
             ])
-
+            
+            # Determine concentration and state
             if features.yawn_detected:
-                state = "Distracted"
-                self.concentration_updated.emit(0.0)
+                state = "Distracted (Yawning)"
+                concentration_value = 0.0
             elif engagement['smoothed_prediction'] == 'Fully Engaged' and distraction_score <= 1:
                 state = "Focused"
-                self.concentration_updated.emit(1.0)
-            elif pupil_std_ratio > 0.5:
-                state = "Focused"
-                self.concentration_updated.emit(1.0)
+                concentration_value = 1.0
             else:
                 state = "Distracted"
-                self.concentration_updated.emit(0.0)
-
+                concentration_value = 0.0
+                
+            # Check if state or concentration value has changed
+            state_changed = (self.last_state != state)
+            concentration_changed = (self.last_concentration_value is None or 
+                                    abs(self.last_concentration_value - concentration_value) > 0.1)
+            
+            # Send an update if either value has changed
+            if state_changed or concentration_changed:
+                print(f"State/concentration changed: {self.last_state}->{state}, {self.last_concentration_value}->{concentration_value}")
+                self._send_status_update(concentration_value, state)
+                
+            # Update stored values
+            self.last_state = state
+            self.last_concentration_value = concentration_value
+                
+            # Always emit the standard Qt signal
+            self.concentration_updated.emit(concentration_value)
+            
             mp.solutions.drawing_utils.draw_landmarks(
                 image=overlay,
                 landmark_list=face_landmarks,
@@ -297,5 +346,33 @@ class WebcamProcessor(QObject):
         cv2.imshow("Webcam Feed", final_output)
         cv2.waitKey(1)
 
-        self.frame_processed.emit(final_output, engagement)
-        return final_output, engagement
+        self.frame_processed.emit(final_output, engagement_details)
+        return final_output, {"state": state, "engagement": engagement_details}
+    
+    def _send_status_update(self, concentration_value, state):
+        """Send a status update via OSC to the dashboard"""
+        current_time = time.time()
+        
+        # Only send if we haven't sent recently (avoid flooding)
+        if current_time - self.last_distraction_time >= self.distraction_cooldown:
+            try:
+                # Format values correctly
+                student_id_str = str(self.student_id)
+                concentration_float = float(concentration_value)
+                state_str = str(state)
+                
+                # Print exactly what we're sending
+                print(f"SENDING OSC STATUS to {DASHBOARD_IP}:{DASHBOARD_PORT}, address={DASHBOARD_STATUS_ADDRESS}")
+                print(f"  → Values: [{student_id_str}, {concentration_float}, {state_str}]")
+                
+                # Send OSC message with student ID, concentration value and state
+                self.dashboard_osc_client.send_message(
+                    DASHBOARD_STATUS_ADDRESS, 
+                    [student_id_str, concentration_float, state_str]
+                )
+                self.last_distraction_time = current_time
+            except Exception as e:
+                print(f"ERROR sending OSC status update: {e}")
+                print(f"  → Student ID: {self.student_id}, Type: {type(self.student_id)}")
+                print(f"  → Concentration: {concentration_value}, Type: {type(concentration_value)}")
+                print(f"  → State: {state}, Type: {type(state)}")

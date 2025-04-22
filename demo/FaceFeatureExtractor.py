@@ -70,7 +70,7 @@ class FaceFeatureExtractor:
 
         # Calculate gaze
         gaze_x, gaze_y = calculate_gaze_with_iris(
-            face_landmarks.landmark, frame_width, frame_height, True
+            face_landmarks.landmark, frame_width, frame_height, False
         )
 
         # Detect head movement
