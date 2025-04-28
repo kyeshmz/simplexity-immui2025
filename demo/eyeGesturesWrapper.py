@@ -1,35 +1,27 @@
-# eyeGesturesWrapper.py
-
 from eyeGestures.utils import VideoCapture
 from eyeGestures import EyeGestures_v3
 
 class EyeGestures:
-    def __init__(self, camera_index=0, screen_width=500, screen_height=500):
+    def __init__(self):
         self.gestures = EyeGestures_v3()
-        self.cap = VideoCapture(camera_index)
-        self.calibrate = True  # Start with calibration enabled
-        self.screen_width = screen_width
-        self.screen_height = screen_height
+        self.cap = VideoCapture(0)
+        self.screen_width = 500
+        self.screen_height = 500
 
-    def process_frame(self):
+    def process_frame(self, calibrating=True):
         ret, frame = self.cap.read()
         if not ret:
             return None, None
 
         event, cevent = self.gestures.step(
             frame,
-            self.calibrate,
+            calibrating,  # 👈 pass calibration flag properly
             self.screen_width,
             self.screen_height,
-            context="student_ui"
+            context="my_context"
         )
 
         if event:
-            norm_x = event.point[0]
-            norm_y = event.point[1]
-            return norm_x, norm_y
+            return event.point[0], event.point[1]
         else:
             return None, None
-
-    def stop(self):
-        self.cap.release()
