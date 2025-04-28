@@ -14,7 +14,7 @@ from eyes_utils import (
 )
 
 # Thresholds for various features
-MAR_THRESHOLD = 0.6         # Threshold for yawning detection [study at a Glasgow Uni]
+MAR_THRESHOLD = 0.7         # Threshold for yawning detection 0.6 [study at a Glasgow Uni]; raised to be less sensitive to talking
 
 MOVEMENT_THRESHOLD = 7       # Threshold for significant head movement (degrees)
 
@@ -93,7 +93,13 @@ class FaceFeatureExtractor:
         yawn_detected = False
         if mar > MAR_THRESHOLD:
             if self.yawn_detected_time is None:
-                self.yawn_detected_time = time.time()
+                self.yawn_detected_time = current_time
+            mouth_open_duration = current_time - self.yawn_detected_time
+
+            if mouth_open_duration >= 1.0:  # require mouth open for 1.0 second
+                yawn_detected = True
+            else:
+                yawn_detected = False
         else:
             self.yawn_detected_time = None
 

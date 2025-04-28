@@ -13,6 +13,8 @@ from config import (
 )
 
 from pythonosc.udp_client import SimpleUDPClient
+from eyeGesturesWrapper import EyeGestures
+
 
 
 class MainWindow(QMainWindow):
@@ -21,7 +23,7 @@ class MainWindow(QMainWindow):
         self.osc_handler = osc_handler
         self.student_id = student_id
         self.setWindowTitle(f"Student Annotation UI - {self.student_id}")
-        self.setGeometry(100, 100, 700, 600)
+        self.setGeometry(100, 100, 1200, 800)
 
         try:
             self.osc_client = SimpleUDPClient(dashboard_ip, dashboard_port)
@@ -44,6 +46,12 @@ class MainWindow(QMainWindow):
         font.setPointSize(font.pointSize() + 2)
         self.text_edit.setFont(font)
         self.main_layout.addWidget(self.text_edit)
+
+        from collections import deque
+        from PySide6.QtWidgets import QLabel, QGraphicsOpacityEffect
+
+        # Gaze heatmap trail
+        self.gaze_trail = deque(maxlen=60)  # store last x number of gaze dots
 
         self.binary_concentration_state = 1
 
@@ -72,9 +80,16 @@ class MainWindow(QMainWindow):
         self.setStatusBar(self.status_bar)
         self.status_bar.showMessage("Annotations OFF")
 
+        self.eye_gestures = EyeGestures()
+        self.gaze_timer = QTimer()
+        self.gaze_timer.timeout.connect(self.check_gaze_position)
+        self.gaze_timer.start(100)  # poll every 100 ms
+
+        self.last_hovered_paragraph_index = None
+
         self.osc_handler.annotation_state_changed.connect(self.update_annotation_state)
         self.toggle_button.clicked.connect(self.update_annotation_state_from_button)
-        self.text_edit.word_hovered.connect(self.handle_hover_event)
+        # self.text_edit.word_hovered.connect(self.handle_hover_event)
         self.text_edit.viewport().installEventFilter(self)
         self.osc_handler.display_annotation_requested.connect(self.show_popup_via_osc)
         self.concentration_slider.valueChanged.connect(self.update_concentration_display)
@@ -110,37 +125,88 @@ class MainWindow(QMainWindow):
             if block.text().strip():
                 index += 1
             block = block.next()
-        return None
-
-    def get_block_by_visible_index(self, target_index):
-        block = self.text_edit.document().begin()
-        index = 1
-        while block.isValid():
-            if block.text().strip():
-                if index == target_index:
-                    return block
-                index += 1
-            block = block.next()
+    #     return None
+    #
+    # def get_block_by_visible_index(self, target_index):
+    #     block = self.text_edit.document().begin()
+    #     index = 1
+    #     while block.isValid():
+    #         if block.text().strip():
+    #             if index == target_index:
+    #                 return block
+    #             index += 1
+    #         block = block.next()
         return QTextCursor().block()
 
-    def eventFilter(self, obj, event):
-        if event.type() == QEvent.MouseMove and obj is self.text_edit.viewport():
-            if not self.osc_handler.show_annotations:
-                return False
-            cursor = self.text_edit.cursorForPosition(event.pos())
-            paragraph_index = self.get_visible_paragraph_index(cursor)
-            if paragraph_index and paragraph_index != self.last_hovered_paragraph_index:
-                self.clear_paragraph_highlight()
-                self.last_hovered_paragraph_index = paragraph_index
-                self.highlight_paragraph(paragraph_index)
-                self.show_binary_annotation(self.text_edit.mapToGlobal(event.pos()), paragraph_index)
-            return False
-        elif event.type() == QEvent.Leave and obj is self.text_edit.viewport():
-            self.annotation_popup.hide()
+    def check_gaze_position(self):
+        if not self.osc_handler.show_annotations:
+            return
+
+        norm_x, norm_y = self.eye_gestures.process_frame()
+        if norm_x is None or norm_y is None:
+            return
+
+        # Map gaze normalized coords to widget coordinates
+        widget_x = int(norm_x * self.text_edit.width())
+        widget_y = int(norm_y * self.text_edit.height())
+        widget_pos = QPoint(widget_x, widget_y)
+
+        # Move relative to self.text_edit position inside central_widget
+        offset = self.text_edit.pos()
+        global_x = widget_x + offset.x()
+        global_y = widget_y + offset.y()
+
+        # Remove old dot if needed
+        if len(self.gaze_trail) >= 20:
+            old_dot = self.gaze_trail.popleft()
+            old_dot.deleteLater()
+
+        # Create a new gaze dot
+        dot = QLabel(self.central_widget)
+        dot.setFixedSize(18, 18)
+        dot.setStyleSheet("background-color: rgba(255, 0, 0, 200); border-radius: 9px;")
+        dot.move(global_x - 6, global_y - 6)
+        dot.raise_()
+        dot.show()
+
+        # Add the dot to the trail
+        self.gaze_trail.append(dot)
+
+        # Fade older dots
+        for i, dot in enumerate(self.gaze_trail):
+            opacity_effect = QGraphicsOpacityEffect()
+            alpha = 1.0 - (i / len(self.gaze_trail))  # Newest = opaque, oldest = faded
+            opacity_effect.setOpacity(alpha)
+            dot.setGraphicsEffect(opacity_effect)
+
+        # Simulate hover over paragraph
+        cursor = self.text_edit.cursorForPosition(widget_pos)
+        paragraph_index = self.get_visible_paragraph_index(cursor)
+
+        if paragraph_index and paragraph_index != self.last_hovered_paragraph_index:
             self.clear_paragraph_highlight()
-            self.last_hovered_paragraph_index = None
-            return True
-        return super().eventFilter(obj, event)
+            self.last_hovered_paragraph_index = paragraph_index
+            self.highlight_paragraph(paragraph_index)
+            self.show_binary_annotation(self.text_edit.mapToGlobal(widget_pos), paragraph_index)
+
+    # def eventFilter(self, obj, event):
+    #     if event.type() == QEvent.MouseMove and obj is self.text_edit.viewport():
+    #         if not self.osc_handler.show_annotations:
+    #             return False
+    #         cursor = self.text_edit.cursorForPosition(event.pos())
+    #         paragraph_index = self.get_visible_paragraph_index(cursor)
+    #         if paragraph_index and paragraph_index != self.last_hovered_paragraph_index:
+    #             self.clear_paragraph_highlight()
+    #             self.last_hovered_paragraph_index = paragraph_index
+    #             self.highlight_paragraph(paragraph_index)
+    #             self.show_binary_annotation(self.text_edit.mapToGlobal(event.pos()), paragraph_index)
+    #         return False
+    #     elif event.type() == QEvent.Leave and obj is self.text_edit.viewport():
+    #         self.annotation_popup.hide()
+    #         self.clear_paragraph_highlight()
+    #         self.last_hovered_paragraph_index = None
+    #         return True
+    #     return super().eventFilter(obj, event)
 
     def show_binary_annotation(self, global_pos, paragraph_index=None):
         if not self.osc_handler.show_annotations:
@@ -160,9 +226,9 @@ class MainWindow(QMainWindow):
         self.annotation_popup.setContent(content["text"], content["image"])
         self.annotation_popup.showAt(global_pos + QPoint(15, 15))
 
-    @Slot(str, QPoint)
-    def handle_hover_event(self, word, global_pos):
-        self.show_binary_annotation(global_pos)
+    # @Slot(str, QPoint)
+    # def handle_hover_event(self, word, global_pos):
+    #     self.show_binary_annotation(global_pos)
 
     @Slot(str)
     def show_popup_via_osc(self, word):
