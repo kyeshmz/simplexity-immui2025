@@ -3,7 +3,7 @@ from PySide6.QtWidgets import (
     QLabel, QStatusBar, QSlider, QFormLayout, QApplication, QGraphicsOpacityEffect
 )
 from PySide6.QtCore import Qt, Slot, QPoint, QTimer
-from PySide6.QtGui import QTextCharFormat, QColor, QTextDocument, QTextCursor
+from PySide6.QtGui import QTextCharFormat, QColor, QTextDocument, QTextCursor, QPixmap, QPainter, QBrush
 
 from annotation_popup import AnnotationPopup
 from hover_text_edit import HoverTextEdit
@@ -42,11 +42,16 @@ class MainWindow(QMainWindow):
         self.text_edit.setReadOnly(True)
         self.text_edit.setText(SAMPLE_PARAGRAPH)
         font = self.text_edit.font()
-        font.setPointSize(font.pointSize() + 2)
+        font.setPointSize(20)
         self.text_edit.setFont(font)
         self.main_layout.addWidget(self.text_edit)
 
-        self.gaze_trail = deque(maxlen=60)
+        # # --- Heatmap overlay setup ---
+        # self.heatmap_overlay = QLabel(self.text_edit.viewport())
+        # self.heatmap_overlay.setAttribute(Qt.WA_TransparentForMouseEvents)
+        # self.heatmap_overlay.lower()  # put it behind text if needed
+
+        self.gaze_trail = deque(maxlen=10)
 
         self.binary_concentration_state = 1
 
@@ -77,7 +82,7 @@ class MainWindow(QMainWindow):
         self.eye_gestures = EyeGestures()
         self.gaze_timer = QTimer()
         self.gaze_timer.timeout.connect(self.check_gaze_position)
-        self.gaze_timer.start(30)
+        self.gaze_timer.start(16)
 
         self.last_hovered_paragraph_index = None
 
@@ -92,6 +97,15 @@ class MainWindow(QMainWindow):
 
         self.update_annotation_state(self.osc_handler.show_annotations)
         self.send_concentration_update()
+
+        self.smoothed_x = 0.5
+        self.smoothed_y = 0.5
+        self.smoothing_alpha = 0.18
+
+        self.show()
+        # QTimer.singleShot(0, self.resize_heatmap_overlay)
+
+
 
     @Slot()
     def update_annotation_state_from_button(self):
@@ -123,37 +137,39 @@ class MainWindow(QMainWindow):
         if not self.osc_handler.show_annotations:
             return
 
-        norm_x, norm_y = self.eye_gestures.process_frame(
-            screen_width=self.text_edit.width(),
-            screen_height=self.text_edit.height()
+        # norm_x, norm_y = self.eye_gestures.process_frame(
+        #     screen_width=self.text_edit.width(),
+        #     screen_height=self.text_edit.height()
+        # )
+        # if norm_x is None or norm_y is None:
+        #     return
+
+        norms = self.eye_gestures.process_frame(...)
+        if norms is not None:
+            norm_x, norm_y = norms
+            self.last_valid_x = norm_x
+            self.last_valid_y = norm_y
+        else:
+            norm_x, norm_y = self.last_valid_x, self.last_valid_y
+
+        # Smooth the gaze to reduce jitter
+        self.smoothed_x = (
+                self.smoothing_alpha * norm_x + (1 - self.smoothing_alpha) * self.smoothed_x
+        )
+        self.smoothed_y = (
+                self.smoothing_alpha * norm_y + (1 - self.smoothing_alpha) * self.smoothed_y
         )
 
-        if norm_x is None or norm_y is None:
-            return
+        widget_x = int(self.smoothed_x * self.text_edit.viewport().width())
+        widget_y = int(self.smoothed_y * self.text_edit.viewport().height())
 
-        widget_x = int(norm_x * self.text_edit.viewport().width())
-        widget_y = int(norm_y * self.text_edit.viewport().height())
         widget_pos = QPoint(widget_x, widget_y)
 
-        if len(self.gaze_trail) >= 60:
-            old_dot = self.gaze_trail.popleft()
-            old_dot.deleteLater()
+        # # --- Heatmap drawing ---
+        # self.fade_heatmap()
+        # self.draw_heat_point(widget_x, widget_y)
 
-        dot = QLabel(self.text_edit.viewport())
-        size = 20
-        dot.setFixedSize(size, size)
-        dot.setStyleSheet(f"background-color: rgba(0, 128, 255, 180); border-radius: {size // 2}px;")
-        dot.move(widget_x - size // 2, widget_y - size // 2)
-        dot.show()
-
-        self.gaze_trail.append(dot)
-
-        for i, dot in enumerate(self.gaze_trail):
-            opacity_effect = QGraphicsOpacityEffect()
-            alpha = max(0.1, 1.0 - (i / len(self.gaze_trail)))
-            opacity_effect.setOpacity(alpha)
-            dot.setGraphicsEffect(opacity_effect)
-
+        # --- Paragraph highlight and popup logic ---
         cursor = self.text_edit.cursorForPosition(widget_pos)
 
         if not cursor.isNull():
@@ -163,6 +179,46 @@ class MainWindow(QMainWindow):
                 self.last_hovered_paragraph_index = paragraph_index
                 self.highlight_paragraph(paragraph_index)
                 self.show_binary_annotation(self.text_edit.viewport().mapToGlobal(widget_pos), paragraph_index)
+
+        # Clear old dot if over limit
+        if len(self.gaze_trail) >= 5:
+            old_dot = self.gaze_trail.popleft()
+            old_dot.deleteLater()
+
+        # Create the new dot
+        dot = QLabel(self.text_edit.viewport())
+        size = 20
+        dot.setFixedSize(size, size)
+        dot.setStyleSheet(f"background-color: rgba(0, 128, 255, 180); border-radius: {size // 2}px;")
+        dot.move(widget_x - size // 2, widget_y - size // 2)
+        dot.show()
+
+        self.gaze_trail.append(dot)
+
+        # Apply progressively fading opacity
+        for i, dot in enumerate(reversed(self.gaze_trail)):
+            opacity_effect = QGraphicsOpacityEffect()
+            alpha = max(0.2, 1.0 - (i / len(self.gaze_trail)))  # Fades from 1.0 down to ~0.2
+            opacity_effect.setOpacity(alpha)
+            dot.setGraphicsEffect(opacity_effect)
+
+    # def fade_heatmap(self, fade_strength=10):
+    #     fade_painter = QPainter(self.heatmap_pixmap)
+    #     fade_painter.setCompositionMode(QPainter.CompositionMode_DestinationIn)
+    #     # fade_color = QColor(0, 0, 0, 255 - fade_strength)  # keep 90% of the previous frame
+    #     fade_color = QColor(0, 0, 0, 255)
+    #     fade_painter.fillRect(self.heatmap_pixmap.rect(), fade_color)
+    #     fade_painter.end()
+    #     self.heatmap_overlay.setPixmap(self.heatmap_pixmap)
+    #
+    # def draw_heat_point(self, x, y, radius=15, alpha=80):
+    #     painter = QPainter(self.heatmap_pixmap)
+    #     color = QColor(0, 128, 255, alpha)
+    #     painter.setBrush(QBrush(color))
+    #     painter.setPen(Qt.NoPen)
+    #     painter.drawEllipse(QPoint(x, y), radius, radius)
+    #     painter.end()
+    #     self.heatmap_overlay.setPixmap(self.heatmap_pixmap)
 
     def show_binary_annotation(self, global_pos, paragraph_index=None):
         if not self.osc_handler.show_annotations:
@@ -227,6 +283,16 @@ class MainWindow(QMainWindow):
     @Slot()
     def send_test_trigger(self):
         print("[Test Button] Trigger sending is disabled for now.")
+
+    # def resize_heatmap_overlay(self):
+    #     self.heatmap_overlay.resize(self.text_edit.viewport().size())
+    #     self.heatmap_pixmap = QPixmap(self.heatmap_overlay.size())
+    #     self.heatmap_pixmap.fill(Qt.transparent)
+    #     self.heatmap_overlay.setPixmap(self.heatmap_pixmap)
+    #
+    # def resizeEvent(self, event):
+    #     super().resizeEvent(event)
+    #     self.resize_heatmap_overlay()
 
     def highlight_paragraph(self, paragraph_index):
         block = self.get_block_by_visible_index(paragraph_index)
