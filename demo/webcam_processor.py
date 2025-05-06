@@ -279,7 +279,7 @@ class WebcamProcessor(QObject):
             
             # Determine concentration and state
             if features.yawn_detected:
-                state = "Distracted (Yawning)"
+                state = "Distracted"
                 concentration_value = 0.0
             elif engagement['smoothed_prediction'] == 'Fully Engaged' and distraction_score <= 1:
                 state = "Focused"
@@ -304,24 +304,41 @@ class WebcamProcessor(QObject):
                 
             # Always emit the standard Qt signal
             self.concentration_updated.emit(concentration_value)
-            
-            mp.solutions.drawing_utils.draw_landmarks(
-                image=overlay,
-                landmark_list=face_landmarks,
-                connections=self.mp_face_mesh.FACEMESH_TESSELATION,
-                landmark_drawing_spec=None,
-                connection_drawing_spec=mp.solutions.drawing_utils.DrawingSpec(color=(255, 255, 255), thickness=1, circle_radius=1)
-            )
+
+
+            # # Estimate background brightness around the nose bridge (landmark 1)
+            # landmark = face_landmarks.landmark[1]
+            # x_px = int(landmark.x * frame_w)
+            # y_px = int(landmark.y * frame_h)
+            # roi = frame_gray[max(y_px - 5, 0):y_px + 5, max(x_px - 5, 0):x_px + 5]
+            # mean_brightness = np.mean(roi) if roi.size > 0 else 127
+            #
+            # # Choose mesh color: black on light bg, white on dark bg
+            # mesh_color = (0, 0, 0) if mean_brightness > 127 else (255, 255, 255)
+
+
+            # mesh_color = (255, 0, 0)
+            #
+            # mp.solutions.drawing_utils.draw_landmarks(
+            #     image=overlay,
+            #     landmark_list=face_landmarks,
+            #     connections=self.mp_face_mesh.FACEMESH_TESSELATION,
+            #     landmark_drawing_spec=None,
+            #     connection_drawing_spec=mp.solutions.drawing_utils.DrawingSpec(mesh_color, thickness=1, circle_radius=1)
+            # )
+
+
+
 
         frame_gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        _, thresh = cv2.threshold(frame_gray, 50, 255, cv2.THRESH_BINARY_INV)
+        _, thresh = cv2.threshold(frame_gray, 100, 255, cv2.THRESH_BINARY)
         anonymized = cv2.cvtColor(thresh, cv2.COLOR_GRAY2BGR)
         final_output = cv2.addWeighted(anonymized, 1.0, overlay, 1.0, 0)
 
-        cv2.rectangle(final_output, (0, 0), (420, 400), (0, 0, 0), -1)
-        cv2.putText(final_output, f"Blink Rate: {blink_rate:.2f}/s", (10, 40), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 255, 255), 2)
-        cv2.putText(final_output, f"Fixation Duration: {fixation_avg:.0f}ms", (10, 75), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 255, 255), 2)
-        cv2.putText(final_output, f"Pupil Diameter: {pupil_mean:.1f}px", (10, 110), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 255, 255), 2)
+        cv2.rectangle(final_output, (0, 0), (600, 415), (0, 0, 0), -1)
+        cv2.putText(final_output, f"Blink Rate: {blink_rate:.2f}/s", (10, 40), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+        cv2.putText(final_output, f"Fixation Duration: {fixation_avg:.0f}ms", (10, 75), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+        cv2.putText(final_output, f"Pupil Diameter: {pupil_mean:.1f}px", (10, 110), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
 
         if features:
             cv2.putText(final_output, f"Eye Contact Duration: {features.eye_contact_duration:.1f}s", (10, 145), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 255, 255), 2)
@@ -331,20 +348,31 @@ class WebcamProcessor(QObject):
             if features.yawn_detected:
                 text = "YAWNING DETECTED!"
                 font = cv2.FONT_HERSHEY_SIMPLEX
-                font_scale = 0.9
-                thickness = 2
-                color = (255, 0, 0)
+                font_scale = 1.5
+                thickness = 3
+                color = (0, 0, 255)
 
                 text_size = cv2.getTextSize(text, font, font_scale, thickness)[0]
                 text_width = text_size[0]
                 text_x = (final_output.shape[1] - text_width) // 2
-                cv2.putText(final_output, text, (text_x, 290), font, font_scale, color, thickness)
+                cv2.putText(final_output, text, (text_x, 180), font, font_scale, color, thickness)
 
         state_color = (0, 255, 0) if state == "Focused" else (0, 0, 255)
-        cv2.putText(final_output, state, (10, 390), cv2.FONT_HERSHEY_SIMPLEX, 1.8, state_color, 4)
+        cv2.putText(final_output, state, (10, 350), cv2.FONT_HERSHEY_SIMPLEX, 1.8, state_color, 4)
 
-        cv2.imshow("Webcam Feed", final_output)
-        cv2.waitKey(1)
+        for face_landmarks in results.multi_face_landmarks:
+            mp.solutions.drawing_utils.draw_landmarks(
+                image=final_output,
+                landmark_list=face_landmarks,
+                connections=self.mp_face_mesh.FACEMESH_TESSELATION,
+                landmark_drawing_spec=None,
+                connection_drawing_spec=mp.solutions.drawing_utils.DrawingSpec(
+                    color=(255, 0, 0), thickness=1, circle_radius=1
+                )
+            )
+
+        # cv2.imshow("Webcam Feed", final_output)
+        # cv2.waitKey(1)
 
         self.frame_processed.emit(final_output, engagement_details)
         return final_output, {"state": state, "engagement": engagement_details}

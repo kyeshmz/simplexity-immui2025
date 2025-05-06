@@ -27,6 +27,7 @@ from osc_utils import run_osc_server
 
 # Import webcam components
 from webcam_processor import WebcamProcessor
+from webcam_viewer import WebcamViewerWidget
 
 # --- Main Execution ---
 if __name__ == "__main__":
@@ -74,14 +75,50 @@ if __name__ == "__main__":
     # --- Start Webcam Processor ---
     webcam_processor.start()
 
-    if args.show_webcam:
-        print("Webcam window requested via command line flag.")
-        frame_timer = QTimer()
-        frame_timer.timeout.connect(webcam_processor.process_frame)
-        frame_timer.start(30)
+    frame_timer = QTimer()
+    frame_timer.timeout.connect(webcam_processor.process_frame)
+    frame_timer.start(30)
+
+    # Create webcam viewer widget
+    webcam_viewer = WebcamViewerWidget(webcam_processor)
 
     # --- Show Windows ---
+    screen = app.primaryScreen()
+    available_geometry = screen.availableGeometry()
+    
+    # Set window dimensions
+    full_width = available_geometry.width()
+    full_height = available_geometry.height()
+    left_half_width = full_width // 2
+    right_half_width = full_width - left_half_width
+    top_left_height = full_height // 2
+    bottom_left_height = full_height - top_left_height
+
+    # Position student window on the right side
+    student_window.setGeometry(
+        available_geometry.left() + left_half_width, 
+        available_geometry.top(), 
+        right_half_width, 
+        full_height
+    )
     student_window.show()
+
+    # Position webcam viewer on the top left
+    webcam_viewer.setGeometry(
+        available_geometry.left(), 
+        available_geometry.top(), 
+        left_half_width, 
+        top_left_height
+    )
+    webcam_viewer.show()
+
+    # Position dashboard window on the bottom left
+    dashboard_window.setGeometry(
+        available_geometry.left(), 
+        available_geometry.top() + top_left_height, 
+        left_half_width, 
+        bottom_left_height
+    )
     dashboard_window.show()
 
     # Run the application

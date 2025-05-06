@@ -14,7 +14,7 @@ from eyes_utils import (
 )
 
 # Thresholds for various features
-MAR_THRESHOLD = 0.6         # Threshold for yawning detection [study at a Glasgow Uni]
+MAR_THRESHOLD = 0.65         # Threshold for yawning detection [study at a Glasgow Uni]
 
 MOVEMENT_THRESHOLD = 7       # Threshold for significant head movement (degrees)
 
