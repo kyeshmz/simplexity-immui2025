@@ -40,11 +40,11 @@ PARAGRAPH_HOVER_CONTENT = {
     },
     2: {
         1: {
-            "text": "[Placeholder text explanation for Focused User]",
+            "text": "In an electrical circuit, a voltage drop occurs when resistance builds up—often due to loose connections, corroded wires, or poor solder joints. This causes a reduction in the voltage supplied to downstream components, which can lead to malfunction or incorrect sensor readings. Identifying and correcting such points of resistance is crucial for reliable circuit performance.",
             "image": "images/para2_focused.jpg"
         },
         2: {
-            "text": "[Placeholder text explanation Distracted User]",
+            "text": "Think of electricity like water flowing through a pipe. If a pipe is bent the wrong way or not connected properly, some of the water leaks out before it reaches the end. This wasted water is like a voltage drop. The final container (device) doesn’t get enough water (electricity), so it might not work right—just like your lamp flickering when the power’s unstable.",
             "image": "images/para2_distracted.jpg"
         }
     }
