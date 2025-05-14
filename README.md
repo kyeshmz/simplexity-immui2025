@@ -10,7 +10,7 @@ All dependent component scripts can be referenced within “main.py”.
  
 “webcam_processor.py” contains the logic for the binary classification of webcam input into “Focused” and “Distracted” states, after computation of a distraction score which is currently based on a sum of blink rate, fixation average, and detection of eye contact. The settings are currently based on research findings on correlation of fixation average to distraction states, and custom tuning during development. You can further tune the binary classifier by changing the blink rate, fixation rate.
  
-“dashboard_window.py” defines how the overall concentration rates of the users are displayed to a teacher. 
+“dashboard_window.py” defines how the overall concentration rates of a group of users are displayed to a meeting organizer such as a teacher, supervisor, or club leader. User states of individual participants are captured in real-time, as is the aggregated ratio of all users.  
  
 
 ### What the Demo Does
